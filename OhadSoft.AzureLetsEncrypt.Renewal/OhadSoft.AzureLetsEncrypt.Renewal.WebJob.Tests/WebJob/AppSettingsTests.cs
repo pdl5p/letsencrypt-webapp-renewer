@@ -1,14 +1,11 @@
 ﻿using System;
-using System.Collections.Concurrent;
 using System.Collections.Specialized;
 using System.Configuration;
 using System.Globalization;
+using System.Text;
 using System.Threading.Tasks;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
-using Moq;
-using OhadSoft.AzureLetsEncrypt.Renewal.Management;
 using OhadSoft.AzureLetsEncrypt.Renewal.WebJob.AppSettings;
-using OhadSoft.AzureLetsEncrypt.Renewal.WebJob.Email;
 using OhadSoft.AzureLetsEncrypt.Renewal.WebJob.Tests.Util;
 using AppSettingsReader = OhadSoft.AzureLetsEncrypt.Renewal.WebJob.AppSettings.AppSettingsReader;
 
@@ -18,174 +15,279 @@ namespace OhadSoft.AzureLetsEncrypt.Renewal.WebJob.Tests.WebJob
     public class AppSettingsTests : RenewalTestBase
     {
         public const string KeyPrefix = "letsencrypt:";
-        public const string WebAppsKey = "webApps";
-        public const string SubscriptionIdKeySuffix = "-subscriptionId";
-        public const string TenantIdKeySuffix = "-tenantId";
-        public const string ResourceGroupKeySuffix = "-resourceGroup";
-        public const string HostsKeySuffix = "-hosts";
-        public const string EmailKeySuffix = "-email";
-        public const string ClientIdKeySuffix = "-clientId";
-        public const string ClientSecretKeySuffix = "-clientSecret";
-        public const string ServicePlanResourceGroupKeySuffix = "-servicePlanResourceGroup";
-        public const string SiteSlotNameSuffix = "-siteSlotName";
-        public const string UseIpBasedSslKeySuffix = "-useIpBasedSsl";
-        public const string RsaKeyLengthKeySuffix = "-rsaKeyLength";
-        public const string AcmeBaseUriKeySuffix = "-acmeBaseUri";
+
+        private const string WebAppsKey = "webApps";
+        private const string SubscriptionIdKeySuffix = "subscriptionId";
+        private const string TenantIdKeySuffix = "tenantId";
+        private const string ResourceGroupKeySuffix = "resourceGroup";
+        private const string HostsKeySuffix = "hosts";
+        private const string EmailKeySuffix = "email";
+        private const string ClientIdKeySuffix = "clientId";
+        private const string ClientSecretKeySuffix = "clientSecret";
+        private const string ServicePlanResourceGroupKeySuffix = "servicePlanResourceGroup";
+        private const string UseIpBasedSslKeySuffix = "useIpBasedSsl";
+        private const string RsaKeyLengthKeySuffix = "rsaKeyLength";
+        private const string AcmeBaseUriKeySuffix = "acmeBaseUri";
+        private const string RenewXNumberOfDaysBeforeExpirationKeySuffix = "renewXNumberOfDaysBeforeExpiration";
+        private const string AzureAuthenticationEndpointKeySuffix = "azureAuthenticationEndpoint";
+        private const string AzureTokenAudienceKeySuffix = "azureTokenAudience";
+        private const string AzureManagementEndpointKeySuffix = "azureManagementEndpoint";
+        private const string AzureDefaultWebSiteDomainNameKeySuffix = "azureDefaultWebSiteDomainName";
 
         private readonly AppSettingsRenewer m_renewer;
 
         private readonly NameValueCollection m_appSettings = new NameValueCollection
         {
-            { KeyPrefix + WebAppsKey, WebApp1 + ";" + WebApp2 },
-            { KeyPrefix + WebApp1 + SubscriptionIdKeySuffix, Subscription1.ToString() },
-            { KeyPrefix + WebApp2 + SubscriptionIdKeySuffix, Subscription2.ToString() },
-            { KeyPrefix + WebApp1 + TenantIdKeySuffix, Tenant1 },
-            { KeyPrefix + WebApp2 + TenantIdKeySuffix, Tenant2 },
-            { KeyPrefix + WebApp1 + ResourceGroupKeySuffix, ResourceGroup1 },
-            { KeyPrefix + WebApp2 + ResourceGroupKeySuffix, ResourceGroup2 },
-            { KeyPrefix + WebApp1 + HostsKeySuffix, String.Join(";", Hosts1) },
-            { KeyPrefix + WebApp2 + HostsKeySuffix, String.Join(";", Hosts2) },
-            { KeyPrefix + WebApp1 + EmailKeySuffix, Email1 },
-            { KeyPrefix + WebApp2 + EmailKeySuffix, Email2 },
-            { KeyPrefix + WebApp1 + ClientIdKeySuffix, ClientId1.ToString() },
-            { KeyPrefix + WebApp2 + ClientIdKeySuffix, ClientId2.ToString() },
-            { KeyPrefix + WebApp1 + ServicePlanResourceGroupKeySuffix, ServicePlanResourceGroup1 },
-            { KeyPrefix + WebApp1 + SiteSlotNameSuffix, SiteSlotName1 },
-            { KeyPrefix + WebApp1 + UseIpBasedSslKeySuffix, UseIpBasedSsl1.ToString() },
-            { KeyPrefix + WebApp1 + RsaKeyLengthKeySuffix, RsaKeyLength1.ToString(CultureInfo.InvariantCulture) },
-            { KeyPrefix + WebApp1 + AcmeBaseUriKeySuffix, AcmeBaseUri1.ToString() }
+            // Web App collection declaration
+            { BuildConfigKey(WebAppsKey), WebApp1 + ";" + WebApp2 },
+
+            // Shared
+            { BuildConfigKey(ClientIdKeySuffix), ClientIdShared.ToString() },
+
+            // WebApp1
+            { BuildConfigKey(SubscriptionIdKeySuffix, WebApp1), Subscription1.ToString() },
+            { BuildConfigKey(ResourceGroupKeySuffix, WebApp1), ResourceGroup1 },
+            { BuildConfigKey(TenantIdKeySuffix, WebApp1), Tenant1 },
+            { BuildConfigKey(HostsKeySuffix, WebApp1), String.Join(";", Hosts1) },
+            { BuildConfigKey(EmailKeySuffix, WebApp1), Email1 },
+            { BuildConfigKey(ClientIdKeySuffix, WebApp1), ClientId1.ToString() }, // override shared
+            { BuildConfigKey(UseIpBasedSslKeySuffix, WebApp1), UseIpBasedSsl1.ToString() },
+            { BuildConfigKey(RsaKeyLengthKeySuffix, WebApp1), RsaKeyLength1.ToString(CultureInfo.InvariantCulture) },
+            { BuildConfigKey(AcmeBaseUriKeySuffix, WebApp1), AcmeBaseUri1.ToString() },
+            { BuildConfigKey(ServicePlanResourceGroupKeySuffix, WebApp1), ServicePlanResourceGroup1 },
+            { BuildConfigKey(RenewXNumberOfDaysBeforeExpirationKeySuffix, WebApp1), RenewXNumberOfDaysBeforeExpiration1.ToString(CultureInfo.InvariantCulture) },
+            { BuildConfigKey(AzureAuthenticationEndpointKeySuffix, WebApp1), AzureAuthenticationEndpoint1.ToString() },
+            { BuildConfigKey(AzureTokenAudienceKeySuffix, WebApp1), AzureTokenAudience1.ToString() },
+            { BuildConfigKey(AzureManagementEndpointKeySuffix, WebApp1), AzureManagementEndpoint1.ToString() },
+            { BuildConfigKey(AzureDefaultWebSiteDomainNameKeySuffix, WebApp1), AzureDefaultWebsiteDomainName1 },
+
+            // WebApp2
+            { BuildConfigKey(SubscriptionIdKeySuffix, WebApp2), Subscription2.ToString() },
+            { BuildConfigKey(TenantIdKeySuffix, WebApp2), Tenant2 },
+            { BuildConfigKey(ResourceGroupKeySuffix, WebApp2), ResourceGroup2 },
+            { BuildConfigKey(HostsKeySuffix, WebApp2), String.Join(";", Hosts2) },
+            { BuildConfigKey(EmailKeySuffix, WebApp2), Email2 },
+            { BuildConfigKey(ClientIdKeySuffix, WebApp2), ClientId2.ToString() } // override shared
         };
 
         private readonly ConnectionStringSettingsCollection m_connectionStrings = new ConnectionStringSettingsCollection
         {
-            new ConnectionStringSettings(KeyPrefix + WebApp1 + ClientSecretKeySuffix, ClientSecret1),
-            new ConnectionStringSettings(KeyPrefix + WebApp2 + ClientSecretKeySuffix, ClientSecret2)
-        };
+            // Shared
+            new ConnectionStringSettings(BuildConfigKey(ClientSecretKeySuffix), ClientSecret1),
 
-        private readonly Mock<IEmailNotifier> m_emailNotifier = new Mock<IEmailNotifier>();
-        private readonly ConcurrentQueue<RenewalParameters> m_notificationRenewalParameterses = new ConcurrentQueue<RenewalParameters>();
+            // override
+            new ConnectionStringSettings(BuildConfigKey(ClientSecretKeySuffix, WebApp1), ClientSecret1),
+            new ConnectionStringSettings(BuildConfigKey(ClientSecretKeySuffix, WebApp2), ClientSecret2)
+        };
 
         public AppSettingsTests()
         {
             m_renewer = new AppSettingsRenewer(
                 RenewalManager,
                 new AppSettingsRenewalParamsReader(new AppSettingsReader(m_appSettings, m_connectionStrings)),
-                m_emailNotifier.Object);
-
-            m_emailNotifier
-                .Setup(n => n.NotifyAsync(It.IsAny<RenewalParameters>()))
-                .Returns(() => Task.CompletedTask)
-                .Callback<RenewalParameters>(m_notificationRenewalParameterses.Enqueue);
-        }
-
-        [TestMethod]
-        public void TestSingleWebAppConfig()
-        {
-            m_appSettings[KeyPrefix + WebAppsKey] = WebApp1;
-            m_renewer.Renew();
-            VerifySuccessfulRenewal(ExpectedFullRenewalParameters1);
-            VerifySuccessfulRenewal(new[] { ExpectedFullRenewalParameters1 }, m_notificationRenewalParameterses);
-        }
-
-        [TestMethod]
-        public void TestDoubleWebAppConfig()
-        {
-            m_renewer.Renew();
-            VerifySuccessfulRenewal(ExpectedFullRenewalParameters1, ExpectedPartialRenewalParameters2);
-            VerifySuccessfulRenewal(new[] { ExpectedFullRenewalParameters1, ExpectedPartialRenewalParameters2 }, m_notificationRenewalParameterses);
+                EmailNotifier);
         }
 
         [TestMethod]
         public void TestInvalidWebApps()
         {
-            AssertInvalidConfig(WebAppsKey, String.Empty);
+            AssertInvalidConfig(WebAppsKey, null, String.Empty, "webApp", testMissing: true, testShared: false);
         }
 
         [TestMethod]
-        public void TestMissingWebApp()
+        public void TestMissingWebAppConfiguration()
         {
-            AssertInvalidConfig(WebAppsKey, "hello");
+            AssertInvalidConfig(WebAppsKey, null, "hello", expectedText: null, testMissing: true, testShared: false);
         }
 
         [TestMethod]
         public void TestInvalidSubscriptionId()
         {
-            AssertInvalidConfig(WebApp1 + SubscriptionIdKeySuffix, "not a GUID");
+            AssertInvalidConfig(SubscriptionIdKeySuffix, WebApp1, "not a GUID", "subscriptionId");
         }
 
         [TestMethod]
         public void TestInvalidTenantId()
         {
-            AssertInvalidConfig(WebApp2 + TenantIdKeySuffix, String.Empty);
+            AssertInvalidConfig(TenantIdKeySuffix, WebApp2, String.Empty, "tenantId");
         }
 
         [TestMethod]
         public void TestInvalidResourceGroup()
         {
-            AssertInvalidConfig(WebApp1 + ResourceGroupKeySuffix, "     ");
+            AssertInvalidConfig(ResourceGroupKeySuffix, WebApp1, "     ", "resourceGroup");
         }
 
         [TestMethod]
         public void TestInvalidHosts()
         {
-            AssertInvalidConfig(WebApp2 + HostsKeySuffix, "www.foo.com;not/valid");
+            AssertInvalidConfig(HostsKeySuffix, WebApp2, "www.foo.com;not/valid", "hosts", testMissing: true, testShared: false);
         }
 
         [TestMethod]
         public void TestInvalidEmail()
         {
-            AssertInvalidConfig(WebApp1 + EmailKeySuffix, "mail@");
+            AssertInvalidConfig(EmailKeySuffix, WebApp1, "mail@", "email");
         }
 
         [TestMethod]
         public void TestInvalidClientId()
         {
-            AssertInvalidConfig(WebApp2 + ClientIdKeySuffix, " ");
+            AssertInvalidConfig(ClientIdKeySuffix, WebApp2, " ", "clientId");
         }
 
         [TestMethod]
         public void TestInvalidServicePlanResourceGroup()
         {
-            AssertInvalidConfig(WebApp1 + ServicePlanResourceGroupKeySuffix, String.Empty);
+            AssertInvalidConfig(ServicePlanResourceGroupKeySuffix, WebApp1, String.Empty, "servicePlanResourceGroup", testMissing: false);
         }
 
         [TestMethod]
         public void TestInvalidSiteSlotName()
         {
-            AssertInvalidConfig(WebApp2 + SiteSlotNameSuffix, " ");
+            const string webApp = "foo{ }";
+
+            m_appSettings[BuildConfigKey(WebAppsKey)] = webApp;
+            m_appSettings[BuildConfigKey(SubscriptionIdKeySuffix, webApp)] = Subscription1.ToString();
+            m_appSettings[BuildConfigKey(TenantIdKeySuffix, webApp)] = Tenant1;
+            m_appSettings[BuildConfigKey(ResourceGroupKeySuffix, webApp)] = ResourceGroup1;
+            m_appSettings[BuildConfigKey(HostsKeySuffix, webApp)] = String.Join(";", Hosts1);
+            m_appSettings[BuildConfigKey(EmailKeySuffix, webApp)] = Email1;
+
+            AssertInvalidConfigCore("siteSlotName");
         }
 
         [TestMethod]
         public void TestInvalidClientSecret()
         {
-            var clientSecretKey = KeyPrefix + WebApp1 + ClientSecretKeySuffix;
+            var clientSecretKey = BuildConfigKey(ClientSecretKeySuffix, WebApp1);
+            var sharedClientSecretKey = BuildConfigKey(ClientSecretKeySuffix);
+
             m_connectionStrings.Remove(clientSecretKey);
-            m_connectionStrings.Add(new ConnectionStringSettings(clientSecretKey, " "));
-            AssertExtensions.Throws<ConfigurationErrorsException>(() => m_renewer.Renew());
+            m_connectionStrings.Remove(sharedClientSecretKey);
+            AssertInvalidConfigCore("clientSecret");
+
+            m_connectionStrings.Add(new ConnectionStringSettings(clientSecretKey, String.Empty));
+            AssertInvalidConfigCore("clientSecret");
+
+            m_connectionStrings.Remove(clientSecretKey);
+            m_connectionStrings.Add(new ConnectionStringSettings(sharedClientSecretKey, String.Empty));
+            AssertInvalidConfigCore("clientSecret");
         }
 
         [TestMethod]
         public void TestInvalidUseIpBasedSsl()
         {
-            AssertInvalidConfig(WebApp2 + UseIpBasedSslKeySuffix, String.Empty);
+            AssertInvalidConfig(UseIpBasedSslKeySuffix, WebApp2, String.Empty, "useIpBasedSsl", testMissing: false);
         }
 
         [TestMethod]
         public void TestInvalidRsaKeyLength()
         {
-            AssertInvalidConfig(WebApp1 + RsaKeyLengthKeySuffix, "x");
+            AssertInvalidConfig(RsaKeyLengthKeySuffix, WebApp1, "x", "rsaKeyLength", testMissing: false);
         }
 
         [TestMethod]
         public void TestInvalidAcmeBaseUri()
         {
-            AssertInvalidConfig(WebApp2 + AcmeBaseUriKeySuffix, "http:/OnlyOneSlash.com");
+            AssertInvalidConfig(AcmeBaseUriKeySuffix, WebApp2, "http:/OnlyOneSlash.com", "acmeBaseUri", testMissing: false);
         }
 
-        private void AssertInvalidConfig(string keyWithoutPrefix, string value)
+        [TestMethod]
+        public async Task TestSingleWebAppConfig()
         {
-            m_appSettings[KeyPrefix + keyWithoutPrefix] = value;
-            AssertExtensions.Throws<ConfigurationErrorsException>(() => m_renewer.Renew());
+            m_appSettings[KeyPrefix + WebAppsKey] = WebApp1;
+            await m_renewer.Renew();
+            VerifySuccessfulRenewal(ExpectedFullRenewalParameters1);
+            VerifySuccessfulNotification(ExpectedFullRenewalParameters1);
+        }
+
+        [TestMethod]
+        public async Task TestDoubleWebAppConfig()
+        {
+            await m_renewer.Renew();
+            VerifySuccessfulRenewal(ExpectedFullRenewalParameters1, ExpectedPartialRenewalParameters2);
+            VerifySuccessfulNotification(ExpectedFullRenewalParameters1, ExpectedPartialRenewalParameters2);
+        }
+
+        [TestMethod]
+        public async Task TestSharedSettings()
+        {
+            var appSettings = new NameValueCollection
+            {
+                { BuildConfigKey(WebAppsKey), WebApp3 },
+                { BuildConfigKey(SubscriptionIdKeySuffix), SubscriptionShared.ToString() },
+                { BuildConfigKey(ResourceGroupKeySuffix), ResourceGroupShared },
+                { BuildConfigKey(TenantIdKeySuffix), TenantShared },
+                { BuildConfigKey(HostsKeySuffix, WebApp3), String.Join(";", Hosts3) },
+                { BuildConfigKey(EmailKeySuffix), EmailShared },
+                { BuildConfigKey(ClientIdKeySuffix), ClientIdShared.ToString() },
+                { BuildConfigKey(UseIpBasedSslKeySuffix), UseIpBasedSslShared.ToString() },
+                { BuildConfigKey(RsaKeyLengthKeySuffix), RsaKeyLengthShared.ToString(CultureInfo.InvariantCulture) },
+                { BuildConfigKey(AcmeBaseUriKeySuffix), AcmeBaseUriShared.ToString() },
+                { BuildConfigKey(ServicePlanResourceGroupKeySuffix), ServicePlanResourceGroupShared },
+                { BuildConfigKey(RenewXNumberOfDaysBeforeExpirationKeySuffix), RenewXNumberOfDaysBeforeExpirationShared.ToString(CultureInfo.InvariantCulture) },
+                { BuildConfigKey(AzureAuthenticationEndpointKeySuffix), AzureAuthenticationEndpointShared.ToString() },
+                { BuildConfigKey(AzureTokenAudienceKeySuffix), AzureTokenAudienceShared.ToString() },
+                { BuildConfigKey(AzureManagementEndpointKeySuffix), AzureManagementEndpointShared.ToString() },
+                { BuildConfigKey(AzureDefaultWebSiteDomainNameKeySuffix), AzureDefaultWebsiteDomainNameShared },
+            };
+
+            var connectionStrings = new ConnectionStringSettingsCollection
+            {
+                new ConnectionStringSettings(BuildConfigKey(ClientSecretKeySuffix), ClientSecretShared),
+            };
+
+            var renewer = new AppSettingsRenewer(
+                RenewalManager,
+                new AppSettingsRenewalParamsReader(new AppSettingsReader(appSettings, connectionStrings)),
+                EmailNotifier);
+
+            await renewer.Renew();
+
+            VerifySuccessfulRenewal(ExpectedPartialRenewalParameters3);
+            VerifySuccessfulNotification(ExpectedPartialRenewalParameters3);
+        }
+
+        private void AssertInvalidConfig(string key, string webApp, string value, string expectedText = null, bool testMissing = true, bool testShared = true)
+        {
+            var configKey = BuildConfigKey(key, webApp);
+
+            m_appSettings[configKey] = value;
+            AssertInvalidConfigCore(expectedText);
+
+            m_appSettings.Remove(configKey);
+            var sharedCofigKey = BuildConfigKey(key);
+            if (testShared)
+            {
+                m_appSettings[sharedCofigKey] = value;
+                AssertInvalidConfigCore(expectedText);
+            }
+
+            if (testMissing)
+            {
+                m_appSettings.Remove(sharedCofigKey);
+                AssertInvalidConfigCore(expectedText);
+            }
+        }
+
+        private void AssertInvalidConfigCore(string expectedText)
+        {
+            AssertExtensions.Throws<ConfigurationErrorsException>(
+                () => m_renewer.Renew().GetAwaiter().GetResult(),
+                e => expectedText == null || e.ToString().Contains(expectedText));
+        }
+
+        private static string BuildConfigKey(string key, string webApp = null)
+        {
+            var builder = new StringBuilder(KeyPrefix);
+            if (webApp != null)
+            {
+                builder.Append(webApp + "-");
+            }
+
+            builder.Append(key);
+            return builder.ToString();
         }
     }
 }

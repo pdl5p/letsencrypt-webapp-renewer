@@ -1,7 +1,7 @@
 [![Build status](https://ci.appveyor.com/api/projects/status/3fwuiks1yq4oro4v/branch/master?svg=true)](https://ci.appveyor.com/project/ohadschn/letsencrypt-webapp-renewer/branch/master)
 
 # letsencrypt-webapp-renewer
-A WebJob-ready console application for renewing Azure Web App TLS/SSL certificates (based on [letsencrypt-siteextension](https://github.com/sjkp/letsencrypt-siteextension))
+A WebJob-ready console application for renewing Azure Web App TLS/SSL certificates (based on [letsencrypt-siteextension](https://github.com/sjkp/letsencrypt-siteextension)). Officially [recommended by Microsoft](https://feedback.azure.com/forums/169385-web-apps/suggestions/6737285-add-support-for-free-ssl-certs-like-those-from-let) for Web App Let's Encrypt integration.
 ## Motivation
 HTTPS is the pervasive standard for all websites, regardless of size or field. 
 The Mozilla foundation has gone so far as to [announce their intent to completely phase out HTTP](https://blog.mozilla.org/security/2015/04/30/deprecating-non-secure-http/). 
@@ -31,7 +31,7 @@ Create an AAD service principal with the proper permissions, as explained [here]
 ## Configuration
 The `letsencrypt-webapp-renewer` WebJob is configured via [Web App Settings](https://docs.microsoft.com/en-us/azure/app-service-web/web-sites-configure#application-settings). You might as well configure it before installing so that it doesn't run with no/partial configuration by mistake. Note that these settings should be configured on the Web App where the `letsencrypt-webapp-renewer` WebJob is deployed (NOT on the Web Apps to be renewed).
 1. Set `letsencrypt:webApps` to a semicolon-delimited list of Azure Web App names for which certificate renewal should take place.
-1. For each Web App specified in `letsencrypt:webApps`, set the following app setting with the proper values as noted down in the  preparation above (replacing `webAppName` with the actual Web App name):
+1. For each Web App specified in `letsencrypt:webApps`, set the following app setting with the proper values as noted down in the preparation above (replacing `webAppName` with the actual Web App name):
    1. `letsencrypt:webAppName-subscriptionId`
    1. `letsencrypt:webAppName-tenantId`
    1. `letsencrypt:webAppName-resourceGroup`
@@ -39,11 +39,11 @@ The `letsencrypt-webapp-renewer` WebJob is configured via [Web App Settings](htt
    1. `letsencrypt:webAppName-email` (will be used for both Let's Encrypt registration and e-mail notifications)
    1. `letsencrypt:webAppName-clientId`
    1. `letsencrypt:webAppName-clientSecret` (should be set as a **connection string**)
-   1. (optional) `letsencrypt:webAppName-servicePlanResourceGroup`
-   1. (optional) `letsencrypt:webAppName-siteSlotName`
-   1. (optional) `letsencrypt:webAppName-useIpBasedSsl`
-   1. (optional) `letsencrypt:webAppName-rsaKeyLength`
-   1. (optional) `letsencrypt:webAppName-acmeBaseUri`
+   1. `letsencrypt:webAppName-servicePlanResourceGroup` (optional, defaults to the Web App Resource Group)
+   1. `letsencrypt:webAppName-useIpBasedSsl` (optional, defaults to `false`)
+   1. `letsencrypt:webAppName-rsaKeyLength` (optional, defaults to `2048`)
+   1. `letsencrypt:webAppName-acmeBaseUri` (optiona, defaults to `https://acme-v01.api.letsencrypt.org`)
+   1. `letsencrypt:webAppName-renewXNumberOfDaysBeforeExpiration` (optional, defaults to `-1` which means renewal will take place regardless of the expiry time)
 
 For more information about the various renewal settings see: https://github.com/sjkp/letsencrypt-siteextension.
 
@@ -64,6 +64,23 @@ For more information about the various renewal settings see: https://github.com/
 - `letsencrypt:howlongtobeatsteam-clientId`: `5e1346b6-7db5-4eae-b9fa-7b3d5e42e6c7`
 - (**connection string**) `letsencrypt:howlongtobeatsteam-clientSecret`: `MySecretPassword123`
 
+### Sovereign Cloud (Mooncake, BlackForest, etc.)
+The following settings are required in order to renew certificates on sovereign clouds:
+   1. `letsencrypt:webAppName-azureAuthenticationEndpoint`
+   1. `letsencrypt:webAppName-azureTokenAudience`
+   1. `letsencrypt:webAppName-azureManagementEndpoint`
+   1. `letsencrypt:webAppName-azureDefaultWebSiteDomainName`
+
+You can run the `Get-AzureEnvironment` PowerShell cmdlet to get the required values. For more information about configuring sovereign clouds see: https://github.com/sjkp/letsencrypt-siteextension/wiki/Azure-Germany,-US-or-China.
+
+### Site Deployment Slots
+In order to specify a Site Deployment Slot for a given web app, use the following syntax for the web app's name: `webAppName{siteSlotName}`. For example, if you have a `foo` site with no deployment slots and a `bar` site with `staging` and `prod` deployment slots, configure `letsencrypt:webApps` to be `foo;bar{staging};bar{prod}`. Different deployment slots are treated as different web apps and the normal setting rules apply, so you would still need to configure the regular settings for each of them (e.g. `letsencrypt:foo-subscriptionId`, `letsencrypt:bar{staging}-subscriptionId`, `letsencrypt:bar{prod}-subscriptionId` and so forth). 
+
+### Shared configuration
+It is sometimes useful to share configuraiton settings beween web apps. For example, you might be using the same client credentials, the same subscription ID, or the same resource group for multiple web apps. In order to share a configuration setting between web apps, simply omit the `webAppName-` component of the configuration key. For example, in order to configure shared client credentials, set the `letsencrypt:clientId` app setting and `letsencrypt:clientSecret` connection string. These values will now be used by default for all configured web apps, unless explicitly overriden by setting the fully WebApp-qualified key name (by including the `webAppName-` component, e.g. `letsencrypt:mySpecialSite-clientId`).
+
+All settings except `hosts`may be shared.
+
 ## Installation
 1. (**optional but highly recommended**) Create a new dedicated Web App for cert renewal, to which you will deploy the `letsencrypt-webapp-renewer` WebJob. This will drastically decrease the likelihood of accidental deletion of the renewal WebJob  (e.g. upon deployment of a different app to the same Web App using _Delete Existing files_)
 1. Download the latest [`letsencrypt-webapp-renewer` WebJob zip file](https://github.com/ohadschn/letsencrypt-webapp-renewer/releases).
@@ -80,21 +97,35 @@ The following are optional but **highly recommended**.
 Test the WebJob by [triggering it manually](https://pragmaticdevs.wordpress.com/2016/10/24/triggering-azure-web-jobs-manually/). **You should see a new certificate served when you visit your site**.
 
 ## Command Line usage
-When executed outside of a WebJob context (as determined by the [WEBJOBS_NAME](https://github.com/projectkudu/kudu/wiki/WebJobs#environment-settings) environment variable), the WebJob executable (`AzureLetsEncryptRenewer.exe`) functions as a standalone command-line tool:
+When executed outside of a WebJob context (as determined by the [WEBJOBS_NAME](https://github.com/projectkudu/kudu/wiki/WebJobs#environment-settings) environment variable), the WebJob executable (`AzureLetsEncryptRenewer.exe`) functions as a standalone command-line tool with the following options:
 
-> AzureLetsEncryptRenewer.exe SubscriptionId TenantId ResourceGroup WebApp Hosts Email ClientId ClientSecret [ServicePlanResourceGroupName] [SiteSlotName] [UseIpBasedSsl] [RsaKeyLength] [AcmeBaseUri]
+| Flag | Details |
+| - | - |
+| -s, --subscriptionId | Required. Subscription ID |
+| -t, --tenantId |                             Required. Tenant ID
+| -r, --resourceGroup |                        Required. Resource Group
+| -w, --webApp |                               Required. Web App
+| -o, --hosts |                                Required. Semicolon-delimited list of hosts to include in the certificate - the first will comprise the Subject Name SN) and the rest will comprise the Subject Alternative Names (SANs) 
+| -e, --email |                                Required. E-mail for Let's Encrypt registration and expiry notifications
+| -c, --clientId |                             Required. Client ID
+| -l, --clientSecret |                         Required. Client Secret
+| -p, --servicePlanResourceGroup |             Service Plan Resource Group (if not specified, the provided Web App resource group will be used)
+| -d, --siteSlotName |                         Site Deployment Slot 
+| -i, --useIpBasedSsl |                        (Default: false) Use IP Based SSL
+| -k, --rsaKeyLength |                         (Default: 2048) Certificate RSA key length   
+| -a, --acmeBaseUri |                          ACME base URI, defaults to: https://acme-v01.api.letsencrypt.org/
+| -n, --renewXNumberOfDaysBeforeExpiration |   (Default: -1) Number of days before certificate expiry to renew, defaults to a negative value meaning renewal will ake place regardless of the expiry time
+| -h, --azureAuthenticationEndpoint |          The Active Directory Authority, defaults to: https://login.windows.net/
+| -u, --azureTokenAudience |                   The Active Directory Service Endpoint Resource ID, defaults to: https://management.core.windows.net/
+| -m, --azureManagementEndpoint |              The Resource Manager URL, defaults to: https://management.azure.com
+| -b, --azureDefaultWebSiteDomainName  |       The Azure Web Sites default domain name, defaults to: azurewebsites.net
+--help  |                                    Display this help screen.
+--version  |                                 Display version information.
 
-- `Hosts` is a semicolon-delimited list of host names
-- `ServicePlanResourceGroupName` is optional and can be empty (`""`) if it is the same as the Web App resource group
-- `SiteSlotName` is optional and can be empty (`""`) if site deployment slots are not to be used
-- `UseIpBasedSsl` is optional and defaults to false
-- `RsaKeyLength` is optional and defaults to 2048
-- `AcmeBaseUri` is optional and defaults to https://acme-v01.api.letsencrypt.org/
-
-Exit codes: 
-- 0 = Success
-- 1 = Argument error
-- 2 = Unexpected error
+### Exit codes
+- 0 - Success
+- 1 - Bad argument(s)
+- 2 - Unexpected error
 
 ## Telemetry
 `letsencrypt-webapp-renewer` gathers anonymous telemetry for usage analysis and error reporting. You can disable it by setting the `LETSENCRYPT_DISABLE_TELEMETRY` to any non-empty value.
@@ -116,3 +147,6 @@ Since this project relies on https://github.com/sjkp/letsencrypt-siteextension, 
 > THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYLEFT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 Consult the Let's Encrypt documentation for rate limits: https://letsencrypt.org/docs/rate-limits/
+
+## Powered by Resharper 
+[![Resharper](https://raw.githubusercontent.com/ohadschn/ET4W/master/docs/icon_ReSharper.png)](https://www.jetbrains.com/resharper/)
